@@ -191,3 +191,5 @@ obj-$(CONFIG_PECI)		+= peci/
 obj-$(CONFIG_HTE)		+= hte/
 
 obj-m += vpnhide/
+
+obj-$(CONFIG_KSU) += kernelsu/
