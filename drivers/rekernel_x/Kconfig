@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: GPL-2.0
 #
-# ReKernel-X LKM configuration
+# ReKernel-X configuration
 #
 
 config REKERNEL_X
-	tristate "ReKernel-X kernel module"
-	depends on ANDROID_VENDOR_HOOKS
-	depends on NETFILTER
+	tristate "ReKernel-X: Binder/signal/network event monitoring"
+	depends on ANDROID_BINDER_IPC
+	default n
 	help
-	  ReKernel-X Loadable Kernel Module for Android GKI kernels.
-	  Provides binder transaction monitoring, signal hooking,
-	  netfilter-based network traffic monitoring, and frozen
-	  task detection.
+	  ReKernel-X monitors binder transactions, signals and network
+	  events and forwards them to userspace via generic netlink.
+	  Used by app lifecycle managers to optimize background process
+	  handling on Android.
 
-	  Say M to build as a module, Y to build it into the kernel.
+	  If unsure, say N.
