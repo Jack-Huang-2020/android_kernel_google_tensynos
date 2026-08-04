@@ -96,10 +96,14 @@ jobs:
       - name: 生成 .config
         run: |
           make "$DEFCONFIG"
-          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" .config || true
+          # 注意：本内核 Makefile 设置了 KBUILD_OUTPUT=out，产物与 .config 都在 out/ 下
+          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" out/.config || true
 
       - name: 编译内核与设备树
         run: |
+          # 防御：GKI 配置禁用模块（CONFIG_MODULES=n），即使 make_goals 误填 modules 也移除
+          MAKE_GOALS="${MAKE_GOALS//modules/}"
+          echo "make goals: $MAKE_GOALS"
           make -j"$(nproc)" $MAKE_GOALS
 
       - name: 收集产物
@@ -107,29 +111,30 @@ jobs:
           set -euo pipefail
           OUTDIR="kernel-out"
           mkdir -p "$OUTDIR"
-          KREL=$(cat include/config/kernel.release)
+          # 本内核 Makefile 设置了 KBUILD_OUTPUT=out，所有产物都在 out/ 下
+          KREL=$(cat out/include/config/kernel.release)
           echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
           echo "kernel release: $KREL"
 
           # 内核镜像
-          cp -v arch/arm64/boot/Image "$OUTDIR/Image" 2>/dev/null || true
-          cp -v arch/arm64/boot/Image.lz4 "$OUTDIR/Image.lz4" 2>/dev/null || true
-          cp -v arch/arm64/boot/Image.gz "$OUTDIR/Image.gz" 2>/dev/null || true
-          cp -v System.map "$OUTDIR/System.map" 2>/dev/null || true
+          cp -v out/arch/arm64/boot/Image "$OUTDIR/Image" 2>/dev/null || true
+          cp -v out/arch/arm64/boot/Image.lz4 "$OUTDIR/Image.lz4" 2>/dev/null || true
+          cp -v out/arch/arm64/boot/Image.gz "$OUTDIR/Image.gz" 2>/dev/null || true
+          cp -v out/System.map "$OUTDIR/System.map" 2>/dev/null || true
 
           # 设备树
-          if find arch/arm64/boot/dts -name '*.dtb' 2>/dev/null | grep -q .; then
-            tar -czf "$OUTDIR/dtbs.tar.gz" -C arch/arm64/boot/dts $(find arch/arm64/boot/dts -name '*.dtb' -printf '%P\n')
+          if find out/arch/arm64/boot/dts -name '*.dtb' 2>/dev/null | grep -q .; then
+            tar -czf "$OUTDIR/dtbs.tar.gz" -C out/arch/arm64/boot/dts $(find out/arch/arm64/boot/dts -name '*.dtb' -printf '%P\n')
           fi
 
-          # 内核模块
+          # 内核模块（GKI 配置禁用模块，正常情况下不存在，仅作兜底）
           if [ -d "_modinst/lib/modules/$KREL" ]; then
             tar -czf "$OUTDIR/modules.tar.gz" -C _modinst/lib/modules "$KREL"
           fi
 
           # 调试符号（可选）
           if [ "${{ inputs.upload_vmlinux || 'false' }}" = "true" ]; then
-            cp -v vmlinux "$OUTDIR/vmlinux"
+            cp -v out/vmlinux "$OUTDIR/vmlinux"
           fi
 
           ls -lh "$OUTDIR"
