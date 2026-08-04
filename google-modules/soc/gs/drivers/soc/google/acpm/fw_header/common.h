@@ -8,6 +8,11 @@
 #ifndef __COMMON_H__
 #define __COMMON_H__
 
+/* Direct-make: emulate AOSP-defined CONFIG_GS_ACPM_MODULE */
+#ifndef CONFIG_GS_ACPM_MODULE
+#define CONFIG_GS_ACPM_MODULE 1
+#endif
+
 #ifndef CONFIG_GS_ACPM_MODULE
 #include "acpm_power_stats.h"
 #else
