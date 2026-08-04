@@ -43,7 +43,7 @@ env:
   CROSS_COMPILE: aarch64-linux-
   GCC_VERSION: "14.2.0"
   DEFCONFIG: zumapro_defconfig
-  MAKE_GOALS: "Image.lz4 Image.gz dtbs"
+  MAKE_GOALS: "Image.lz4 Image.gz dtbs modules"
 
 jobs:
   build:
@@ -97,8 +97,10 @@ jobs:
         run: |
           make "$DEFCONFIG"
           # 注意：本内核 Makefile 设置了 KBUILD_OUTPUT=out，产物与 .config 都在 out/ 下
-          # google-modules 是外部模块（obj-m 硬编码），由 vendor_dlkm 步骤收集刷入；
-          # 不要用 sed 强制 =m→=y：会导致 acpm 等模块内建后头文件分支出错（build_info 不完整类型）
+          # 启用 CONFIG_MODULES（AOSP 官方构建即如此）：外部模块（google-modules）需要
+          # MODULES=y 才会执行 modpost/链接阶段生成 .ko（否则只有 .o，vendor_dlkm 无内容）
+          scripts/config --file out/.config -e MODULES
+          make olddefconfig
           echo "--- 关键配置检查 ---"
           grep -E "^CONFIG_MODULES|^CONFIG_GS_DRM_PANEL_UNIFIED|^CONFIG_DRM_PANEL_SAMSUNG" out/.config || true
           grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU" out/.config || true
@@ -196,14 +198,14 @@ jobs:
           MODDIR="dlkm_root/lib/modules/$KREL"
           mkdir -p "$MODDIR"
           find out -name '*.ko' -exec cp {} "$MODDIR/" \;
-          KO_COUNT=$(ls "$MODDIR"/*.ko 2>/dev/null | wc -l)
+          KO_COUNT=$(find "$MODDIR" -maxdepth 1 -name '*.ko' | wc -l)
           echo "模块数量: $KO_COUNT"
           if [ "$KO_COUNT" -eq 0 ]; then
             echo "WARNING: 无 .ko 模块产物"
             exit 0
           fi
           # modules.load（init 按此加载模块）
-          ls "$MODDIR"/*.ko | xargs -n1 basename | sed 's/\.ko$//' > "$MODDIR/modules.load"
+          find "$MODDIR" -maxdepth 1 -name '*.ko' -printf '%f\n' | sed 's/\.ko$//' > "$MODDIR/modules.load"
           # modules.dep（depmod）
           depmod -b dlkm_root "$KREL" 2>/dev/null || true
           # 打包 ext4 镜像（256MB，模块通常几十 MB）
