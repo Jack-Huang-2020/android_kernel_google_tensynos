@@ -7,6 +7,11 @@
 #ifndef __FRAMEWORK_H_
 #define __FRAMEWORK_H_
 
+/* Direct-make: AOSP normally defines CONFIG_GS_ACPM_MODULE (offset semantics); emulate it */
+#ifndef CONFIG_GS_ACPM_MODULE
+#define CONFIG_GS_ACPM_MODULE 1
+#endif
+
 #include "common.h"
 
 /**
