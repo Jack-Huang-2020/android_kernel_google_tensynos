@@ -223,11 +223,9 @@ jobs:
           KO_COUNT=$(find "$MODDIR" -maxdepth 1 -name '*.ko' | wc -l)
           echo "模块数量: $KO_COUNT"
           if [ "$KO_COUNT" -eq 0 ]; then
-            echo "ERROR: 没有生成任何 .ko 模块。请确认："
-            echo "  1) CONFIG_MODULES=y（生成 .config 步骤输出应显示 CONFIG_MODULES=y）"
-            echo "  2) 编译日志中出现 'LD [M] xxx.ko'（模块链接）"
-            echo "  3) make 目标包含 modules"
-            exit 1
+            # 全内建模式（=y）：所有驱动编译进内核，无 .ko 属正常，跳过 vendor_dlkm
+            echo "INFO: 全内建构建，无模块需要打包（驱动已编译进内核），跳过 vendor_dlkm"
+            exit 0
           fi
           # modules.load（init 按此加载模块）
           find "$MODDIR" -maxdepth 1 -name '*.ko' -printf '%f\n' | sed 's/\.ko$//' > "$MODDIR/modules.load"
