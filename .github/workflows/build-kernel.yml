@@ -7,7 +7,7 @@
 #   - 产物：Image / Image.lz4 / Image.gz / dtb / 内核模块 / System.map（可选用 vmlinux）
 #
 # 触发方式：
-#   - push 到 main / master：按 DEFCONFIG 默认值（zuma_defconfig）构建
+#   - push 到 main / master / KernelSU：按 DEFCONFIG 默认值（zumapro_defconfig）构建
 #   - 手动触发（workflow_dispatch）：可选择设备 defconfig 与 make 目标
 
 name: Build Kernel (tensynos)
@@ -19,7 +19,7 @@ on:
         description: 设备 defconfig（zuma=Pixel 8 系列, zumapro=Pixel 9 系列, gs201=Pixel 7 系列）
         type: choice
         required: true
-        default: zuma_defconfig
+        default: zumapro_defconfig
         options:
           - zuma_defconfig
           - zumapro_defconfig
@@ -36,18 +36,18 @@ on:
         required: false
         default: false
   push:
-    branches: [main, master]
+    branches: [main, master, KernelSU]
 
 env:
   ARCH: arm64
   CROSS_COMPILE: aarch64-linux-
   GCC_VERSION: "14.2.0"
-  DEFCONFIG: zuma_defconfig
+  DEFCONFIG: zumapro_defconfig
   MAKE_GOALS: "Image.lz4 Image.gz dtbs"
 
 jobs:
   build:
-    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.defconfig || 'zuma_defconfig' }}
+    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.defconfig || 'zumapro_defconfig' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     defaults:
@@ -97,7 +97,14 @@ jobs:
         run: |
           make "$DEFCONFIG"
           # 注意：本内核 Makefile 设置了 KBUILD_OUTPUT=out，产物与 .config 都在 out/ 下
-          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" out/.config || true
+          # 关键：defconfig 有 163 个 =m 模块（含显示驱动），但直接 make 环境没有 AOSP 的
+          # CONFIG_MODULES=y + vendor_dlkm 流程 —— CONFIG_MODULES 默认 n 时这些驱动不会编译，
+          # 导致显示等驱动缺失（hwc 报错/卡系统界面）。这里强制全部内建（=y）。
+          sed -i 's/=m$/=y/' out/.config
+          make olddefconfig
+          echo "--- 关键配置检查 ---"
+          grep -E "^CONFIG_MODULES|^CONFIG_GS_DRM_PANEL_UNIFIED|^CONFIG_DRM_PANEL_SAMSUNG" out/.config || true
+          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU" out/.config || true
 
       - name: 修复子模块兼容问题并放宽警告
         run: |
@@ -159,9 +166,10 @@ jobs:
           cp -v out/arch/arm64/boot/Image.gz "$OUTDIR/Image.gz" 2>/dev/null || true
           cp -v out/System.map "$OUTDIR/System.map" 2>/dev/null || true
 
-          # 设备树
-          if find out/arch/arm64/boot/dts -name '*.dtb' 2>/dev/null | grep -q .; then
-            tar -czf "$OUTDIR/dtbs.tar.gz" -C out/arch/arm64/boot/dts $(find out/arch/arm64/boot/dts -name '*.dtb' -printf '%P\n')
+          # 设备树：本内核 Makefile 定制 dtstree，产物在 out/google-devices/<device>/dts/
+          # （base+overlay 静态合成的 dtb，含 DTC 的 -@ overlay 应用）
+          if find out -name '*.dtb' 2>/dev/null | grep -q .; then
+            tar -czf "$OUTDIR/dtbs.tar.gz" $(find out -name '*.dtb')
           fi
 
           # 内核模块（GKI 配置禁用模块，正常情况下不存在，仅作兜底）
@@ -181,6 +189,51 @@ jobs:
           fi
 
           ls -lh "$OUTDIR"
+
+      - name: 打包 AnyKernel3 刷机包
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AK3
+          # 内核镜像：Pixel GKI boot 的 kernel 段为 Image.lz4，AK3 中命名为 zImage
+          if [ -f out/arch/arm64/boot/Image.lz4 ]; then
+            cp out/arch/arm64/boot/Image.lz4 AK3/zImage
+          else
+            cp out/arch/arm64/boot/Image AK3/zImage
+          fi
+          # dtb：本内核编译出的全部设备树（dtstree 产物在 out/google-devices/<device>/dts/，
+          # base+overlay 静态合成）拼接为 dtb.img。
+          # 关键：卡 logo 通常是因为用了别的内核的 dtb，这里必须用本内核的 dtb。
+          find out -name '*.dtb' -exec cat {} + > AK3/dtb.img
+          ls -lh AK3/zImage AK3/dtb.img
+          # Pixel Tensor (GKI 2.0) 刷机配置
+          cat > AK3/anykernel.sh <<'EOF'
+          #!/sbin/sh
+          #####################
+          # Custom kernel (AnyKernel3) for Pixel Tensor (GKI 2.0)
+          #####################
+          ui_print "  ";
+          ui_print "  Installing custom kernel for Pixel Tensor...";
+          ui_print "  ";
+          is_slot_device=auto;
+          block=boot;
+          is_slot_device=1;
+          dtb=dtb.img;
+          dump_boot;
+          write_boot;
+          EOF
+          chmod +x AK3/anykernel.sh
+          # 打包（保留 AK3 的 META-INF/tools，排除 git）
+          rm -rf AK3/.git
+          cd AK3 && zip -r9 ../kernel-ak3.zip . >/dev/null && cd ..
+          ls -lh kernel-ak3.zip
+
+      - name: 上传 AnyKernel3 包
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-ak3
+          path: kernel-ak3.zip
+          if-no-files-found: error
+          retention-days: 14
 
       - name: 上传产物
         uses: actions/upload-artifact@v4
