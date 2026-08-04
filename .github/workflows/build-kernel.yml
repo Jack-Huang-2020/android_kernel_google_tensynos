@@ -97,7 +97,14 @@ jobs:
         run: |
           make "$DEFCONFIG"
           # 注意：本内核 Makefile 设置了 KBUILD_OUTPUT=out，产物与 .config 都在 out/ 下
-          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" out/.config || true
+          # 关键：defconfig 有 163 个 =m 模块（含显示驱动），但直接 make 环境没有 AOSP 的
+          # CONFIG_MODULES=y + vendor_dlkm 流程 —— CONFIG_MODULES 默认 n 时这些驱动不会编译，
+          # 导致显示等驱动缺失（hwc 报错/卡系统界面）。这里强制全部内建（=y）。
+          sed -i 's/=m$/=y/' out/.config
+          make olddefconfig
+          echo "--- 关键配置检查 ---"
+          grep -E "^CONFIG_MODULES|^CONFIG_GS_DRM_PANEL_UNIFIED|^CONFIG_DRM_PANEL_SAMSUNG" out/.config || true
+          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU" out/.config || true
 
       - name: 修复子模块兼容问题并放宽警告
         run: |
