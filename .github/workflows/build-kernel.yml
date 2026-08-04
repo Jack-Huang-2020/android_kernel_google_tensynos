@@ -190,6 +190,31 @@ jobs:
 
           ls -lh "$OUTDIR"
 
+      - name: 打包 vendor_dlkm（模块分区镜像）
+        run: |
+          set -euo pipefail
+          KREL=$(cat out/include/config/kernel.release)
+          # google-modules 等外部模块（obj-m 硬编码，与 CONFIG_MODULES 无关）编译产物为 .ko，
+          # 刷机时必须连模块一起刷入 vendor_dlkm 分区，否则显示/GPU 等驱动缺失。
+          MODDIR="dlkm_root/lib/modules/$KREL"
+          mkdir -p "$MODDIR"
+          find out -name '*.ko' -exec cp {} "$MODDIR/" \;
+          KO_COUNT=$(ls "$MODDIR"/*.ko 2>/dev/null | wc -l)
+          echo "模块数量: $KO_COUNT"
+          if [ "$KO_COUNT" -eq 0 ]; then
+            echo "WARNING: 无 .ko 模块产物"
+            exit 0
+          fi
+          # modules.load（init 按此加载模块）
+          ls "$MODDIR"/*.ko | xargs -n1 basename | sed 's/\.ko$//' > "$MODDIR/modules.load"
+          # modules.dep（depmod）
+          depmod -b dlkm_root "$KREL" 2>/dev/null || true
+          # 打包 ext4 镜像（256MB，模块通常几十 MB）
+          truncate -s 256M vendor_dlkm.img
+          mkfs.ext4 -q -L vendor_dlkm -d dlkm_root vendor_dlkm.img
+          ls -lh vendor_dlkm.img
+          cp vendor_dlkm.img kernel-out/vendor_dlkm.img
+
       - name: 打包 AnyKernel3 刷机包
         run: |
           set -euo pipefail
