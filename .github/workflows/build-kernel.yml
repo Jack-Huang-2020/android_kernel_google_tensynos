@@ -88,8 +88,10 @@ jobs:
             -o /tmp/gcc.tar.xz
           tar -xJf /tmp/gcc.tar.xz -C "$HOME/toolchain/gcc"
           rm -f /tmp/gcc.tar.xz
-          echo "$HOME/toolchain/gcc/gcc-${GCC_VERSION}-nolibc/aarch64-linux/bin" >> "$GITHUB_PATH"
-          aarch64-linux-gcc --version | head -n 1
+          GCC_BIN="$HOME/toolchain/gcc/gcc-${GCC_VERSION}-nolibc/aarch64-linux/bin"
+          # GITHUB_PATH 只在后续步骤生效，当前步骤内需用完整路径验证
+          echo "$GCC_BIN" >> "$GITHUB_PATH"
+          "$GCC_BIN/aarch64-linux-gcc" --version | head -n 1
 
       - name: 生成 .config
         run: |
