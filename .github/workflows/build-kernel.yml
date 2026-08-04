@@ -43,7 +43,7 @@ env:
   CROSS_COMPILE: aarch64-linux-
   GCC_VERSION: "14.2.0"
   DEFCONFIG: zumapro_defconfig
-  MAKE_GOALS: "Image.lz4 Image.gz dtbs modules"
+  MAKE_GOALS: "Image.lz4 Image.gz dtbs"
 
 jobs:
   build:
@@ -138,6 +138,26 @@ jobs:
             RC=$RC2
           fi
           exit $RC
+
+      - name: 链接外部模块 .ko（make M=）
+        run: |
+          # 本内核 Kconfig 无 CONFIG_MODULES 定义（AOSP 定制移除），make modules 不可用；
+          # google-modules 外部模块的 .o 已随主构建编译，用 M= 外部模块模式触发 modpost 链接出 .ko
+          set -euo pipefail
+          # 尝试顶层 M=google-modules（含子目录分派）
+          if make -j"$(nproc)" O=out M=google-modules modules 2>&1 | tee -a build.log; then
+            echo "M=google-modules OK"
+          else
+            echo "顶层 M= 失败，尝试逐子目录..."
+            for d in google-modules/*/; do
+              name=$(basename "$d")
+              echo "--- $name ---"
+              make -j"$(nproc)" O=out M="$d" modules 2>&1 | tee -a build.log || echo "$name 失败（跳过）"
+            done
+          fi
+          echo "=== .ko 产物 ==="
+          find out -name '*.ko' | head -20
+          echo "ko 总数: $(find out -name '*.ko' | wc -l)"
 
       - name: 上传构建日志（失败时）
         if: failure()
