@@ -19,7 +19,7 @@ on:
         description: 设备 defconfig（zuma=Pixel 8 系列, zumapro=Pixel 9 系列, gs201=Pixel 7 系列）
         type: choice
         required: true
-        default: zuma_defconfig
+        default: zumapro_defconfig
         options:
           - zuma_defconfig
           - zumapro_defconfig
@@ -42,12 +42,12 @@ env:
   ARCH: arm64
   CROSS_COMPILE: aarch64-linux-
   GCC_VERSION: "14.2.0"
-  DEFCONFIG: zuma_defconfig
+  DEFCONFIG: zumapro_defconfig
   MAKE_GOALS: "Image.lz4 Image.gz dtbs"
 
 jobs:
   build:
-    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.defconfig || 'zuma_defconfig' }}
+    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.defconfig || 'zumapro_defconfig' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 180
     defaults:
