@@ -1,0 +1,145 @@
+# Android Kernel (google/tensynos) 构建工作流
+#
+# 说明：
+#   - 使用 AOSP 官方 prebuilt Clang（版本与 build.config.constants 中的 CLANG_VERSION 一致）
+#   - 递归 checkout 子模块（KernelSU / v4l2loopback / fs/ntfs 等被 defconfig 引用，
+#     drivers/kernelsu 是指向 KernelSU/kernel 的软链，缺少子模块会导致 make defconfig 失败）
+#   - 产物：Image / Image.lz4 / Image.gz / dtb / 内核模块 / System.map（可选用 vmlinux）
+#
+# 触发方式：
+#   - push 到 main / master：按 DEFCONFIG 默认值（zuma_defconfig）构建
+#   - 手动触发（workflow_dispatch）：可选择设备 defconfig 与 make 目标
+
+name: Build Kernel (tensynos)
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 设备 defconfig（zuma=Pixel 8 系列, zumapro=Pixel 9 系列, gs201=Pixel 7 系列）
+        type: choice
+        required: true
+        default: zuma_defconfig
+        options:
+          - zuma_defconfig
+          - zumapro_defconfig
+          - gs201_defconfig
+          - gki_defconfig
+      make_goals:
+        description: 'make 目标（空格分隔），默认 Image.lz4 dtbs modules'
+        type: string
+        required: false
+        default: "Image.lz4 Image.gz dtbs modules"
+      upload_vmlinux:
+        description: 是否上传 vmlinux（含调试符号，体积较大）
+        type: boolean
+        required: false
+        default: false
+  push:
+    branches: [main, master]
+
+env:
+  CLANG_VERSION: r487747c
+  ARCH: arm64
+  DEFCONFIG: zuma_defconfig
+  MAKE_GOALS: "Image.lz4 Image.gz dtbs modules"
+
+jobs:
+  build:
+    name: Build ${{ github.event_name == 'workflow_dispatch' && inputs.defconfig || 'zuma_defconfig' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout（含子模块）
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: recursive
+          # 子模块均为公开仓库，无需 token；若之后改为私有子模块，
+          # 需在此传入具有读取权限的 PAT。
+
+      - name: 应用手动触发的构建参数
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "DEFCONFIG=${{ inputs.defconfig }}" >> "$GITHUB_ENV"
+          echo "MAKE_GOALS=${{ inputs.make_goals }}" >> "$GITHUB_ENV"
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            flex bison bc cpio kmod \
+            libssl-dev libelf-dev libncurses-dev libfl-dev \
+            lz4 xz-utils zstd \
+            dwarves \
+            python3 ca-certificates curl
+          # dwarves(pahole) 仅在启用 CONFIG_DEBUG_INFO_BTF 时需要，装上以防 defconfig 变动
+
+      - name: 下载 AOSP prebuilt Clang
+        run: |
+          mkdir -p "$HOME/toolchain/clang"
+          curl -fL --retry 3 --retry-delay 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-${CLANG_VERSION}.tar.gz" \
+            -o /tmp/clang.tar.gz
+          tar -xzf /tmp/clang.tar.gz -C "$HOME/toolchain/clang"
+          rm -f /tmp/clang.tar.gz
+          echo "$HOME/toolchain/clang/bin" >> "$GITHUB_PATH"
+          clang --version | head -n 1
+
+      - name: 生成 .config
+        run: |
+          make LLVM=1 CC=clang "$DEFCONFIG"
+          grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" .config || true
+
+      - name: 编译内核与模块
+        run: |
+          make LLVM=1 CC=clang -j"$(nproc)" $MAKE_GOALS
+
+      - name: 安装内核模块到临时目录
+        run: |
+          make LLVM=1 CC=clang INSTALL_MOD_STRIP=1 \
+            modules_install INSTALL_MOD_PATH="$PWD/_modinst"
+
+      - name: 收集产物
+        run: |
+          set -euo pipefail
+          OUTDIR="kernel-out"
+          mkdir -p "$OUTDIR"
+          KREL=$(cat include/config/kernel.release)
+          echo "KERNEL_RELEASE=$KREL" >> "$GITHUB_ENV"
+          echo "kernel release: $KREL"
+
+          # 内核镜像
+          cp -v arch/arm64/boot/Image "$OUTDIR/Image" 2>/dev/null || true
+          cp -v arch/arm64/boot/Image.lz4 "$OUTDIR/Image.lz4" 2>/dev/null || true
+          cp -v arch/arm64/boot/Image.gz "$OUTDIR/Image.gz" 2>/dev/null || true
+          cp -v System.map "$OUTDIR/System.map" 2>/dev/null || true
+
+          # 设备树
+          if find arch/arm64/boot/dts -name '*.dtb' 2>/dev/null | grep -q .; then
+            tar -czf "$OUTDIR/dtbs.tar.gz" -C arch/arm64/boot/dts $(find arch/arm64/boot/dts -name '*.dtb' -printf '%P\n')
+          fi
+
+          # 内核模块
+          if [ -d "_modinst/lib/modules/$KREL" ]; then
+            tar -czf "$OUTDIR/modules.tar.gz" -C _modinst/lib/modules "$KREL"
+          fi
+
+          # 调试符号（可选）
+          if [ "${{ inputs.upload_vmlinux || 'false' }}" = "true" ]; then
+            cp -v vmlinux "$OUTDIR/vmlinux"
+          fi
+
+          ls -lh "$OUTDIR"
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ env.KERNEL_RELEASE }}
+          path: kernel-out/
+          if-no-files-found: error
+          retention-days: 14

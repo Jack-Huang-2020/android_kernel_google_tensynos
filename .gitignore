@@ -11,6 +11,10 @@
 # Normal rules (sorted alphabetically)
 #
 .*
+# 允许 GitHub Actions 工作流文件被跟踪（默认 .* 会忽略 .github/）
+!/.github/
+!/.github/workflows/
+!/.github/workflows/**
 *.a
 *.asn1.[ch]
 *.bin
