@@ -7,9 +7,7 @@
 #ifndef __FRAMEWORK_H_
 #define __FRAMEWORK_H_
 
-#ifdef CONFIG_GS_ACPM_MODULE
 #include "common.h"
-#endif
 
 /**
  * struct acpm_framework - General information for ACPM framework.
