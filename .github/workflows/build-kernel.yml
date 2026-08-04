@@ -7,7 +7,7 @@
 #   - 产物：Image / Image.lz4 / Image.gz / dtb / 内核模块 / System.map（可选用 vmlinux）
 #
 # 触发方式：
-#   - push 到 main / master：按 DEFCONFIG 默认值（zuma_defconfig）构建
+#   - push 到 main / master / KernelSU：按 DEFCONFIG 默认值（zumapro_defconfig）构建
 #   - 手动触发（workflow_dispatch）：可选择设备 defconfig 与 make 目标
 
 name: Build Kernel (tensynos)
