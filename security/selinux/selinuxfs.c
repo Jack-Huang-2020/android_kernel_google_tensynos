@@ -986,7 +986,7 @@ static ssize_t my_write_access(struct file *file, char *buf, size_t size);
 static ssize_t my_write_context(struct file *file, char *buf, size_t size);
 #endif // #ifdef CONFIG_KSU_SUSFS
 
-static ssize_t (*const write_op[])(struct file *, char *, size_t) = {
+ssize_t (*const write_op[])(struct file *, char *, size_t) = {
 #ifdef CONFIG_KSU_SUSFS
 	[SEL_ACCESS] = my_write_access,
 #else
