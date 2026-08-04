@@ -182,6 +182,50 @@ jobs:
 
           ls -lh "$OUTDIR"
 
+      - name: 打包 AnyKernel3 刷机包
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git AK3
+          # 内核镜像：Pixel GKI boot 的 kernel 段为 Image.lz4，AK3 中命名为 zImage
+          if [ -f out/arch/arm64/boot/Image.lz4 ]; then
+            cp out/arch/arm64/boot/Image.lz4 AK3/zImage
+          else
+            cp out/arch/arm64/boot/Image AK3/zImage
+          fi
+          # dtb：本内核编译出的全部设备树拼接为 dtb.img。
+          # 关键：卡 logo 通常是因为用了别的内核的 dtb，这里必须用本内核的 dtb。
+          find out/arch/arm64/boot/dts -name '*.dtb' -exec cat {} + > AK3/dtb.img
+          ls -lh AK3/zImage AK3/dtb.img
+          # Pixel Tensor (GKI 2.0) 刷机配置
+          cat > AK3/anykernel.sh <<'EOF'
+          #!/sbin/sh
+          #####################
+          # Custom kernel (AnyKernel3) for Pixel Tensor (GKI 2.0)
+          #####################
+          ui_print "  ";
+          ui_print "  Installing custom kernel for Pixel Tensor...";
+          ui_print "  ";
+          is_slot_device=auto;
+          block=boot;
+          is_slot_device=1;
+          dtb=dtb.img;
+          dump_boot;
+          write_boot;
+          EOF
+          chmod +x AK3/anykernel.sh
+          # 打包（保留 AK3 的 META-INF/tools，排除 git）
+          rm -rf AK3/.git
+          cd AK3 && zip -r9 ../kernel-ak3.zip . >/dev/null && cd ..
+          ls -lh kernel-ak3.zip
+
+      - name: 上传 AnyKernel3 包
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-ak3
+          path: kernel-ak3.zip
+          if-no-files-found: error
+          retention-days: 14
+
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
