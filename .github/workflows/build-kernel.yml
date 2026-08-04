@@ -26,10 +26,10 @@ on:
           - gs201_defconfig
           - gki_defconfig
       make_goals:
-        description: 'make 目标（空格分隔），默认 Image.lz4 dtbs modules'
+        description: 'make 目标（空格分隔）。注意：GKI 配置禁用模块（CONFIG_MODULES=n），modules 目标会报错'
         type: string
         required: false
-        default: "Image.lz4 Image.gz dtbs modules"
+        default: "Image.lz4 Image.gz dtbs"
       upload_vmlinux:
         description: 是否上传 vmlinux（含调试符号，体积较大）
         type: boolean
@@ -43,7 +43,7 @@ env:
   CROSS_COMPILE: aarch64-linux-
   GCC_VERSION: "14.2.0"
   DEFCONFIG: zuma_defconfig
-  MAKE_GOALS: "Image.lz4 Image.gz dtbs modules"
+  MAKE_GOALS: "Image.lz4 Image.gz dtbs"
 
 jobs:
   build:
@@ -98,14 +98,9 @@ jobs:
           make "$DEFCONFIG"
           grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" .config || true
 
-      - name: 编译内核与模块
+      - name: 编译内核与设备树
         run: |
           make -j"$(nproc)" $MAKE_GOALS
-
-      - name: 安装内核模块到临时目录
-        run: |
-          make INSTALL_MOD_STRIP=1 \
-            modules_install INSTALL_MOD_PATH="$PWD/_modinst"
 
       - name: 收集产物
         run: |
