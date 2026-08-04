@@ -159,9 +159,10 @@ jobs:
           cp -v out/arch/arm64/boot/Image.gz "$OUTDIR/Image.gz" 2>/dev/null || true
           cp -v out/System.map "$OUTDIR/System.map" 2>/dev/null || true
 
-          # 设备树
-          if find out/arch/arm64/boot/dts -name '*.dtb' 2>/dev/null | grep -q .; then
-            tar -czf "$OUTDIR/dtbs.tar.gz" -C out/arch/arm64/boot/dts $(find out/arch/arm64/boot/dts -name '*.dtb' -printf '%P\n')
+          # 设备树：本内核 Makefile 定制 dtstree，产物在 out/google-devices/<device>/dts/
+          # （base+overlay 静态合成的 dtb，含 DTC 的 -@ overlay 应用）
+          if find out -name '*.dtb' 2>/dev/null | grep -q .; then
+            tar -czf "$OUTDIR/dtbs.tar.gz" $(find out -name '*.dtb')
           fi
 
           # 内核模块（GKI 配置禁用模块，正常情况下不存在，仅作兜底）
@@ -192,9 +193,10 @@ jobs:
           else
             cp out/arch/arm64/boot/Image AK3/zImage
           fi
-          # dtb：本内核编译出的全部设备树拼接为 dtb.img。
+          # dtb：本内核编译出的全部设备树（dtstree 产物在 out/google-devices/<device>/dts/，
+          # base+overlay 静态合成）拼接为 dtb.img。
           # 关键：卡 logo 通常是因为用了别的内核的 dtb，这里必须用本内核的 dtb。
-          find out/arch/arm64/boot/dts -name '*.dtb' -exec cat {} + > AK3/dtb.img
+          find out -name '*.dtb' -exec cat {} + > AK3/dtb.img
           ls -lh AK3/zImage AK3/dtb.img
           # Pixel Tensor (GKI 2.0) 刷机配置
           cat > AK3/anykernel.sh <<'EOF'
