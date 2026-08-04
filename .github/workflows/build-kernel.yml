@@ -116,9 +116,11 @@ jobs:
             echo "--- 日志最后 50 行 ---"; tail -50 build.log
             echo "=== 用 V=1 增量重跑以捕获详细错误（已编译对象不重编）==="
             make V=1 -j"$(nproc)" $MAKE_GOALS 2>&1 | tee -a build.log || true
-            RC=${PIPESTATUS[0]}
-            echo "=== V=1 重跑退出码: $RC ==="
+            RC2=${PIPESTATUS[0]}
+            echo "=== V=1 重跑退出码: $RC2 ==="
             echo "--- V=1 日志最后 80 行 ---"; tail -80 build.log
+            # 若 V=1 重跑成功（偶发失败自愈）则放行，产物完整性由收集产物步骤校验
+            RC=$RC2
           fi
           exit $RC
 
@@ -161,6 +163,12 @@ jobs:
           # 调试符号（可选）
           if [ "${{ inputs.upload_vmlinux || 'false' }}" = "true" ]; then
             cp -v out/vmlinux "$OUTDIR/vmlinux"
+          fi
+
+          # 产物完整性校验：内核镜像未生成则视为失败（防止空产物假成功）
+          if [ ! -f "$OUTDIR/Image" ] && [ ! -f "$OUTDIR/Image.lz4" ]; then
+            echo "ERROR: 内核镜像未生成，构建未完成"
+            exit 1
           fi
 
           ls -lh "$OUTDIR"
