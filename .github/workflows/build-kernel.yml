@@ -1,7 +1,7 @@
 # Android Kernel (google/tensynos) 构建工作流
 #
 # 说明：
-#   - 使用 AOSP 官方 prebuilt Clang（版本与 build.config.constants 中的 CLANG_VERSION 一致）
+#   - 使用 kernel.org crosstool GCC 14.2.0 交叉工具链（x86_64-gcc-14.2.0-nolibc-aarch64-linux）
 #   - 递归 checkout 子模块（KernelSU / v4l2loopback / fs/ntfs 等被 defconfig 引用，
 #     drivers/kernelsu 是指向 KernelSU/kernel 的软链，缺少子模块会导致 make defconfig 失败）
 #   - 产物：Image / Image.lz4 / Image.gz / dtb / 内核模块 / System.map（可选用 vmlinux）
@@ -39,8 +39,9 @@ on:
     branches: [main, master]
 
 env:
-  CLANG_VERSION: r487747c
   ARCH: arm64
+  CROSS_COMPILE: aarch64-linux-
+  GCC_VERSION: "14.2.0"
   DEFCONFIG: zuma_defconfig
   MAKE_GOALS: "Image.lz4 Image.gz dtbs modules"
 
@@ -79,31 +80,29 @@ jobs:
             python3 ca-certificates curl
           # dwarves(pahole) 仅在启用 CONFIG_DEBUG_INFO_BTF 时需要，装上以防 defconfig 变动
 
-      - name: 下载 AOSP prebuilt Clang
+      - name: 下载 GCC 14.2.0 交叉工具链
         run: |
-          mkdir -p "$HOME/toolchain/clang"
-          # 注意：clang-r487747c 只在 android14-release 分支保留；
-          # master 分支已清理旧版本（当前仅有 r522817~r547379 等）
+          mkdir -p "$HOME/toolchain/gcc"
           curl -fL --retry 3 --retry-delay 5 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android14-release/clang-${CLANG_VERSION}.tar.gz" \
-            -o /tmp/clang.tar.gz
-          tar -xzf /tmp/clang.tar.gz -C "$HOME/toolchain/clang"
-          rm -f /tmp/clang.tar.gz
-          echo "$HOME/toolchain/clang/bin" >> "$GITHUB_PATH"
-          clang --version | head -n 1
+            "https://mirrors.edge.kernel.org/pub/tools/crosstool/files/bin/x86_64/${GCC_VERSION}/x86_64-gcc-${GCC_VERSION}-nolibc-aarch64-linux.tar.xz" \
+            -o /tmp/gcc.tar.xz
+          tar -xJf /tmp/gcc.tar.xz -C "$HOME/toolchain/gcc"
+          rm -f /tmp/gcc.tar.xz
+          echo "$HOME/toolchain/gcc/gcc-${GCC_VERSION}-nolibc/aarch64-linux/bin" >> "$GITHUB_PATH"
+          aarch64-linux-gcc --version | head -n 1
 
       - name: 生成 .config
         run: |
-          make LLVM=1 CC=clang "$DEFCONFIG"
+          make "$DEFCONFIG"
           grep -E "^CONFIG_LOCALVERSION|^CONFIG_KSU|^CONFIG_VIDEO_V4L2_LOOPBACK" .config || true
 
       - name: 编译内核与模块
         run: |
-          make LLVM=1 CC=clang -j"$(nproc)" $MAKE_GOALS
+          make -j"$(nproc)" $MAKE_GOALS
 
       - name: 安装内核模块到临时目录
         run: |
-          make LLVM=1 CC=clang INSTALL_MOD_STRIP=1 \
+          make INSTALL_MOD_STRIP=1 \
             modules_install INSTALL_MOD_PATH="$PWD/_modinst"
 
       - name: 收集产物
