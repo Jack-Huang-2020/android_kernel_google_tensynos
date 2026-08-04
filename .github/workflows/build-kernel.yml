@@ -112,6 +112,11 @@ jobs:
             echo "--- 磁盘空间 ---"; df -h / | tail -1
             echo "--- out 大小 ---"; du -sh out 2>/dev/null || true
             echo "--- 日志最后 50 行 ---"; tail -50 "$HOME/build.log"
+            echo "=== 用 V=1 增量重跑以捕获详细错误（已编译对象不重编）==="
+            make V=1 -j"$(nproc)" $MAKE_GOALS 2>&1 | tee -a "$HOME/build.log"
+            RC=${PIPESTATUS[0]}
+            echo "=== V=1 重跑退出码: $RC ==="
+            echo "--- V=1 日志最后 80 行 ---"; tail -80 "$HOME/build.log"
           fi
           exit $RC
 
