@@ -2414,3 +2414,13 @@ source "drivers/acpi/Kconfig"
 
 source "arch/arm64/kvm/Kconfig"
 
+# SuSFS (for KernelSU): 官方 KernelSU 不提供 CONFIG_KSU_SUSFS 选项
+# （ReSukiSU 提供过），这里补上以启用树内 susfs 补丁（fs/susfs.c 等）
+config KSU_SUSFS
+	bool "SuSFS support (for KernelSU)"
+	depends on KSU
+	default y
+	help
+	  Enable the in-tree SuSFS patch set (susfs v2.2.0) which provides
+	  kernel-level root hiding features on top of KernelSU.
+
