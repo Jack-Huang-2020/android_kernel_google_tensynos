@@ -104,7 +104,25 @@ jobs:
           # 防御：GKI 配置禁用模块（CONFIG_MODULES=n），即使 make_goals 误填 modules 也移除
           MAKE_GOALS="${MAKE_GOALS//modules/}"
           echo "make goals: $MAKE_GOALS"
-          make -j"$(nproc)" $MAKE_GOALS
+          # 完整日志落盘，失败时随 artifact 上传，便于定位（并行构建输出可能被截断）
+          make -j"$(nproc)" $MAKE_GOALS 2>&1 | tee "$HOME/build.log"
+          RC=${PIPESTATUS[0]}
+          if [ $RC -ne 0 ]; then
+            echo "=== 构建失败诊断 ==="
+            echo "--- 磁盘空间 ---"; df -h / | tail -1
+            echo "--- out 大小 ---"; du -sh out 2>/dev/null || true
+            echo "--- 日志最后 50 行 ---"; tail -50 "$HOME/build.log"
+          fi
+          exit $RC
+
+      - name: 上传构建日志（失败时）
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: $HOME/build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: 收集产物
         run: |
